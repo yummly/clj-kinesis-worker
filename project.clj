@@ -1,4 +1,4 @@
-(defproject de.komoot/clj-kinesis-worker "1.0.2"
+(defproject yummly/clj-kinesis-worker "1.0.3"
   :author "Johannes Staffans"
   :description "Wrapper for the Amazon Kinesis Client library"
   :url "https://github.com/komoot/clj-kinesis-worker"
@@ -6,6 +6,9 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [com.amazonaws/amazon-kinesis-client "1.8.5"]
+                 [com.amazonaws/dynamodb-streams-kinesis-adapter "1.2.2"
+                  :exclusions [com.amazonaws/amazon-kinesis-client com.amazonaws/aws-java-sdk-cloudwatch com.amazonaws/aws-java-sdk-dynamodb
+                               com.amazonaws/aws-java-sdk-kinesis com.fasterxml.jackson.core/jackson-databind]]
                  [com.taoensso/encore "2.79.1" :exclusions [org.clojure/clojure]]
                  [com.taoensso/timbre "4.7.4" :exclusions [org.clojure/clojure]]
                  [com.fzakaria/slf4j-timbre "0.3.2"]

@@ -9,14 +9,15 @@
            [com.amazonaws.regions Regions]
            [com.amazonaws ClientConfiguration]
            [com.amazonaws.services.cloudwatch AmazonCloudWatchClient]
-           [com.amazonaws.services.kinesis AmazonKinesisClient]
+           [com.amazonaws.services.kinesis AmazonKinesis AmazonKinesisClient]
            [com.amazonaws.services.kinesis.clientlibrary.interfaces
             IRecordProcessorFactory
             IRecordProcessor]
            [com.amazonaws.services.kinesis.clientlibrary.lib.worker
             KinesisClientLibConfiguration
             Worker InitialPositionInStream]
-           [com.amazonaws.services.dynamodbv2 AmazonDynamoDBClient]))
+           [com.amazonaws.services.dynamodbv2 AmazonDynamoDBClient]
+           [com.amazonaws.services.dynamodbv2.streamsadapter AmazonDynamoDBStreamsAdapterClient]))
 
 #_(log/merge-config!
   {:level      :info
@@ -67,6 +68,19 @@
         region (.withRegion (aws-region-enum region))
         endpoint (.setEndpoint endpoint)))))
 
+(defn dynamodb-streams-adapter
+  [{:keys [provider region endpoint] :as client-opts}]
+  (if (empty? client-opts)
+    (AmazonDynamoDBStreamsAdapterClient.)
+    (let [^AWSCredentialsProvider provider
+          (or provider (DefaultAWSCredentialsProviderChain.))
+          ;; TODO: client configuration such as timeout, max retries
+          ^ClientConfiguration config
+          (ClientConfiguration.)]
+      (doto-cond [c (AmazonDynamoDBStreamsAdapterClient. provider config)]
+        region (.withRegion (aws-region-enum region))
+        endpoint (.setEndpoint endpoint)))))
+
 (defn cloudwatch-client
   [config {:keys [region]}]
   (doto-cond [c (AmazonCloudWatchClient. (.getCloudWatchCredentialsProvider config) (.getCloudWatchClientConfiguration config))]
@@ -84,8 +98,8 @@
 (def ^:private worker*
   (memoize
     (fn
-      [{:keys [provider region kinesis dynamodb worker-id app-name stream-name initial-position failover-time processor-factory-fn]
-        :or   {worker-id (default-worker-id) initial-position :latest}
+      [{:keys [provider region kinesis dynamodb worker-id app-name stream-name initial-position failover-time processor-factory-fn stream-type]
+        :or   {worker-id (default-worker-id) initial-position :latest stream-type :kinesis}
         :as   worker-opts}]
       ;; TODO: client configuration such as timeout, max retries
       (let [_ (assert (not (nil? app-name)) ":app-name missing")
@@ -93,13 +107,17 @@
             _ (assert (fn? processor-factory-fn) "value of :processor-factory-fn is not a function")
             _ (assert (contains? #{:trim-horizon :latest} initial-position) "value of :initial-position is invalid")
             _ (when failover-time (assert (and (integer? failover-time) (pos? failover-time)) "value of :failover-time must be a positive integer"))
+            _ (assert (#{:kinesis :dynamodb} stream-type))
 
             ^AWSCredentialsProvider provider
             (or provider (DefaultAWSCredentialsProviderChain.))
             ^AmazonDynamoDBClient dynamodb-client
             (dynamodb-client (merge worker-opts dynamodb))
-            ^AmazonKinesisClient kinesis-client
-            (kinesis-client (merge worker-opts kinesis))
+            make-kinesis-client (case stream-type
+                                  :kinesis kinesis-client
+                                  :dynamodb dynamodb-streams-adapter)
+            ^AmazonKinesis kinesis-client
+            (make-kinesis-client (merge worker-opts kinesis))
             ^KinesisClientLibConfiguration config
             (doto-cond [c (KinesisClientLibConfiguration. app-name stream-name provider worker-id)]
               :always       (.withInitialPositionInStream (initial-position-enum initial-position))
